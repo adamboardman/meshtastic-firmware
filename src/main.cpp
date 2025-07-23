@@ -58,6 +58,11 @@ NimbleBluetooth *nimbleBluetooth = nullptr;
 NRF52Bluetooth *nrf52Bluetooth = nullptr;
 #endif
 
+#ifdef ARCH_RP2040
+#include "PicoWBluetooth.h"
+PicoWBluetooth *pico_w_bluetooth = nullptr;
+#endif
+
 #if HAS_WIFI || defined(USE_WS5500)
 #include "mesh/api/WiFiServerAPI.h"
 #include "mesh/wifi/WiFiAPClient.h"

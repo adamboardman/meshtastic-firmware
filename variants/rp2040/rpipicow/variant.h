@@ -4,8 +4,14 @@
 
 #define ARDUINO_ARCH_AVR
 
-#ifndef HAS_WIFI
-#define HAS_WIFI 1
+// #ifndef HAS_WIFI
+// #define HAS_WIFI 1
+// #endif
+#ifndef HAS_BLUETOOTH
+#define HAS_BLUETOOTH 1
+#endif
+#ifndef ENABLE_BLE
+#define ENABLE_BLE 1
 #endif
 
 // default I2C pins:

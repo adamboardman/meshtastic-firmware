@@ -1203,6 +1203,10 @@ void AdminModule::handleGetDeviceConnectionStatus(const meshtastic_MeshPacket &r
     if (config.bluetooth.enabled && nrf52Bluetooth) {
         conn.bluetooth.is_connected = nrf52Bluetooth->isConnected();
     }
+#elif defined(ARCH_RP2040)
+    if (config.bluetooth.enabled && pico_w_bluetooth) {
+        conn.bluetooth.is_connected = pico_w_bluetooth->isConnected();
+    }
 #endif
 #endif
     conn.has_serial = true; // No serial-less devices
@@ -1428,6 +1432,9 @@ void disableBluetooth()
 #elif defined(ARCH_NRF52)
     if (nrf52Bluetooth)
         nrf52Bluetooth->shutdown();
+#elif defined(ARCH_RP2040)
+    if (pico_w_bluetooth)
+        pico_w_bluetooth->shutdown();
 #endif
 #endif
 }

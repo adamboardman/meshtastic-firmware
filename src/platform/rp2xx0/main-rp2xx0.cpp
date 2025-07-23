@@ -4,6 +4,16 @@
 #include <hardware/pll.h>
 #include <pico/stdlib.h>
 #include <pico/unique_id.h>
+#include <pico/cyw43_arch.h>
+#include "main.h"
+#include "NodeDB.h"
+#include "PicoWBluetooth.h"
+#include "PowerMon.h"
+#include "ble/att_db.h"
+#include "ble/att_server.h"
+#include "ble/att_db_util.h"
+#include "ble/le_device_db.h"
+#include "ble/sm.h"
 
 #ifdef __PLAT_RP2040__
 #include <pico/sleep.h>
@@ -74,15 +84,39 @@ void cpuDeepSleep(uint32_t msecs)
 }
 #endif
 
+#if !MESHTASTIC_EXCLUDE_BLUETOOTH
 void setBluetoothEnable(bool enable)
 {
-    // not needed
+    if (config.bluetooth.enabled == true) {
+        if (enable) {
+            if (!pico_w_bluetooth) {
+                LOG_DEBUG("Init PicoW Bluetooth");
+                pico_w_bluetooth = new PicoWBluetooth();
+            }
+            pico_w_bluetooth->setup();
+        } else {
+            //shutdown bluetooth
+            hci_power_control(HCI_POWER_OFF);
+            if (pico_w_bluetooth) {
+                powerMon->clearState(meshtastic_PowerMon_State_BT_On);
+                pico_w_bluetooth->shutdown();
+            }
+        }
+    }
 }
 
-void updateBatteryLevel(uint8_t level)
-{
-    // not needed
+void updateBatteryLevel(uint8_t level) {
+    if (pico_w_bluetooth) {
+        pico_w_bluetooth->updateBatteryLevel(level);
+    }
 }
+
+#else
+
+void setBluetoothEnable(bool enable) {}
+void updateBatteryLevel(uint8_t level) {}
+
+#endif
 
 void getMacAddr(uint8_t *dmac)
 {
