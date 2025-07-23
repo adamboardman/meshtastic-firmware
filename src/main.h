@@ -19,6 +19,10 @@ extern NimbleBluetooth *nimbleBluetooth;
 #include "NRF52Bluetooth.h"
 extern NRF52Bluetooth *nrf52Bluetooth;
 #endif
+#ifdef ARCH_RP2040
+#include "PicoWBluetooth.h"
+extern PicoWBluetooth *pico_w_bluetooth;
+#endif
 #if !MESHTASTIC_EXCLUDE_I2C
 #include "detect/ScanI2CTwoWire.h"
 #endif
