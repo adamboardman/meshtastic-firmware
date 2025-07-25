@@ -19,6 +19,7 @@ typedef struct {
     uint16_t value_handle;
     uint8_t *data;
     int data_size;
+    bool connected;
 } le_connection_t;
 
 #define BLE_ADVERTISING_MAX_LENGTH 31
@@ -29,6 +30,16 @@ typedef struct {
 #define BLE_FLAG_LE_BR_EDR_HOST (0x10) // Simultaneous LE and BR/EDR, Host
 #define BLE_FLAGS_LE_ONLY_LIMITED_DISC_MODE (BLE_FLAG_LE_LIMITED_DISC_MODE | BLE_FLAG_BR_EDR_NOT_SUPPORTED)
 #define BLE_FLAGS_LE_ONLY_GENERAL_DISC_MODE (BLE_FLAG_LE_GENERAL_DISC_MODE | BLE_FLAG_BR_EDR_NOT_SUPPORTED)
+
+//an additional 31 bytes of data can be given in response to a scan
+static uint8_t scan_response_meshtastic_data[] = {
+    //0xXX (the length of the subsequent data, {d0(type), d01-dXX}
+    //6ba1b218-15a8-461f-9fa8-5dcae273eafd - meshtastic
+    17, BLUETOOTH_DATA_TYPE_INCOMPLETE_LIST_OF_128_BIT_SERVICE_CLASS_UUIDS, 0xfd, 0xea, 0x73, 0xe2, 0xca, 0x5d, 0xa8,
+    0x9f, 0x1f, 0x46, 0xa8, 0x15, 0x18, 0xb2, 0xa1, 0x6b,
+};
+static const uint8_t scan_response_meshtastic_data_length = sizeof(scan_response_meshtastic_data);
+static_assert(scan_response_meshtastic_data_length <= 31);
 
 le_connection_t le_connection;
 
@@ -83,7 +94,8 @@ void BluetoothPhoneAPI::onNowHasData(uint32_t fromRadioNum) {
 
 /// Check the current underlying physical link to see if the client is currently connected
 bool BluetoothPhoneAPI::checkIsConnected() {
-    return connection_secured;
+    // see also PicoWBluetooth::isConnected()
+    return le_connection.connected || le_connection.notification_enabled || connection_secured;
 }
 
 static uint8_t fromRadioBytes[meshtastic_FromRadio_size];
@@ -224,12 +236,12 @@ int att_write_callback(hci_con_handle_t connection_handle, uint16_t att_handle, 
                         context.value_handle =
                                 ATT_CHARACTERISTIC_ORG_BLUETOOTH_CHARACTERISTIC_TEMPERATURE_01_VALUE_HANDLE;
                         break;
-                    case ATT_CHARACTERISTIC_ed9da18c_a800_4f66_a670_aa7547e34453_01_CLIENT_CONFIGURATION_HANDLE:
-                        context.value_handle = ATT_CHARACTERISTIC_ed9da18c_a800_4f66_a670_aa7547e34453_01_VALUE_HANDLE;
-                        break;
                     case ATT_CHARACTERISTIC_ORG_BLUETOOTH_CHARACTERISTIC_BATTERY_LEVEL_01_CLIENT_CONFIGURATION_HANDLE:
                         context.value_handle =
                                 ATT_CHARACTERISTIC_ORG_BLUETOOTH_CHARACTERISTIC_BATTERY_LEVEL_01_VALUE_HANDLE;
+                        break;
+                    case ATT_CHARACTERISTIC_ed9da18c_a800_4f66_a670_aa7547e34453_01_CLIENT_CONFIGURATION_HANDLE:
+                        context.value_handle = ATT_CHARACTERISTIC_ed9da18c_a800_4f66_a670_aa7547e34453_01_VALUE_HANDLE;
                         break;
                     default:
                         break;
@@ -292,13 +304,14 @@ void setup_advertisements() {
     // both discovery and connection establishment.
 
     // setup advertisements - units each of 625us
-    uint16_t adv_int_min = 1600; // 1 second
-    uint16_t adv_int_max = 3200; // 2 seconds
+    uint16_t adv_int_min = 1000000 / 625; // 1 second
+    uint16_t adv_int_max = 2000000 / 625; // 2 seconds
     uint8_t adv_type = 0;
     bd_addr_t null_addr;
     memset(null_addr, 0, 6);
     gap_advertisements_set_params(adv_int_min, adv_int_max, adv_type, 0, null_addr, 0x07, 0x00);
-    gap_advertisements_set_data(adv_data_len, (uint8_t *) adv_data);
+    gap_advertisements_set_data(adv_data_len, adv_data);
+    gap_scan_response_set_data(scan_response_meshtastic_data_length, scan_response_meshtastic_data);
     gap_advertisements_enable(1);
 }
 
@@ -353,6 +366,12 @@ void att_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, 
                                   (uint8_t *) &le_connection.data, le_connection.data_size);
             }
 
+            break;
+        case ATT_EVENT_CONNECTED: //0xb3
+            le_connection.connected = true;
+            break;
+        case ATT_EVENT_DISCONNECTED: //0xb4
+            le_connection.connected = false;
             break;
 
         default:
@@ -441,11 +460,15 @@ void PicoWBluetooth::setup() {
 
     l2cap_init();
     sm_init();
-    uint32_t configuredPasskey = config.bluetooth.mode == meshtastic_Config_BluetoothConfig_PairingMode_FIXED_PIN
-                                     ? config.bluetooth.fixed_pin
-                                     : random(100000, 999999);
-    LOG_INFO("Bluetooth pin set to '%d'", configuredPasskey);
-    sm_use_fixed_passkey_in_display_role(configuredPasskey);
+    if (config.bluetooth.mode == meshtastic_Config_BluetoothConfig_PairingMode_FIXED_PIN) {
+        sm_use_fixed_passkey_in_display_role(config.bluetooth.fixed_pin);
+        LOG_DEBUG("Bluetooth pin set to '%d'", config.bluetooth.fixed_pin);
+    } else {
+        LOG_DEBUG("Bluetooth pin will be generated on the fly as needed");
+    }
+    if (config.has_display) {
+        sm_set_io_capabilities(IO_CAPABILITY_DISPLAY_ONLY);
+    }
 
     LOG_DEBUG("att_server_init()");
     att_server_init(profile_data, att_read_callback, att_write_callback);
@@ -482,7 +505,8 @@ void PicoWBluetooth::clearBonds() {
 }
 
 bool PicoWBluetooth::isConnected() {
-    return connection_secured;
+    //see also BluetoothPhoneAPI::checkIsConnected()
+    return le_connection.connected || le_connection.notification_enabled || connection_secured;
 }
 
 int PicoWBluetooth::getRssi() {
