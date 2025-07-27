@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstring>
 #include <memory>
 #ifdef ARDUINO_ARCH_RP2040
 // See below #define GUARD_LOCK
@@ -175,69 +176,63 @@ inline void CircularBuffer<char>::writeF(const char *format, ...) {
 }
 
 template<>
-inline uint16_t CircularBuffer<char>::consume_line(char *line, uint16_t line_size) {
-    uint16_t consumable = (head <= tail && !empty() ? fixed_size : head) - tail;
+inline uint16_t CircularBuffer<char>::consume_line(char *line, const uint16_t line_size) {
+    const uint16_t head_copy = head;
+    uint16_t tail_copy = tail;
+
+    uint16_t consumable = (head_copy <= tail_copy && !empty() ? fixed_size : head_copy) - tail_copy;
     uint16_t will_consume = std::min(line_size, consumable);
-    auto to_consume = reinterpret_cast<char *>(&buffer[tail]);
-    auto line_end = strchr(to_consume, '\n');
+    auto to_consume = reinterpret_cast<char *>(&buffer[tail_copy]);
+    auto line_end = std::strchr(to_consume, '\n');
     uint16_t written_out = 0;
     if (line_end == nullptr) {
-        memcpy(line, to_consume, will_consume);
+        std::memcpy(line, to_consume, will_consume);
         written_out = will_consume;
         if (consumable == will_consume) {
-            if (head <= tail && !empty()) {
-                tail = 0;
+            uint16_t extra = 0;
+            if (head_copy <= tail_copy && !empty()) {
+                tail_copy = 0;
                 to_consume = reinterpret_cast<char *>(&buffer[0]);
-                line_end = strchr(to_consume, '\n');
-                if (line_end == nullptr) {
-                    maxed = false;
-                    line[written_out] = '\0';
-                    return written_out;
-                } else {
-                    uint16_t extra = line_end - to_consume + 1;
+                line_end = std::strchr(to_consume, '\n');
+                if (line_end != nullptr) {
+                    extra = line_end - to_consume + 1;
                     extra = std::min(static_cast<uint16_t>(line_size - written_out), extra);
-                    memcpy(&line[written_out], to_consume, extra);
-                    maxed = false;
-                    tail = (tail + extra) % fixed_size;
-                    line[written_out + extra] = '\0';
-                    return written_out + extra;
+                    std::memcpy(&line[written_out], to_consume, extra);
+                    tail_copy = (tail_copy + extra) % fixed_size;
                 }
-            }
-            tail = head;
-            maxed = false;
-            line[will_consume] = '\0';
-            return will_consume;
-        }
-        tail += written_out;
-        consumable = head;
-        will_consume = std::min(static_cast<uint16_t>(line_size - written_out), consumable);
-        to_consume = reinterpret_cast<char *>(&buffer[tail]);
-        line_end = strchr(to_consume, '\n');
-        if (line_end == nullptr) {
-            memcpy(&line[written_out], to_consume, will_consume);
-            maxed = false;
-            if ((written_out + will_consume) < consumable) {
-                tail = (tail + will_consume) % fixed_size;
-            } else if (head <= tail && !empty()) {
-                tail = written_out + will_consume;
             } else {
-                tail = head;
+                tail_copy = head_copy;
             }
-            tail += will_consume;
-            line[written_out + will_consume] = '\0';
-            return written_out + will_consume;
+            line[written_out + extra] = '\0';
+            maxed = false;
+            tail = tail_copy;
+            return written_out + extra;
+        } else {
+            tail_copy += written_out;
+            consumable = head_copy;
+            will_consume = std::min(static_cast<uint16_t>(line_size - written_out), consumable);
+            to_consume = reinterpret_cast<char *>(&buffer[tail_copy]);
+            line_end = strchr(to_consume, '\n');
         }
     }
-    uint16_t line_extra = std::min(will_consume, static_cast<uint16_t>(line_end - to_consume + 1));
-    memcpy(&line[written_out], to_consume, line_extra);
+    uint16_t line_extra = will_consume;
+    if (line_end != nullptr) {
+        line_extra = std::min(will_consume, static_cast<uint16_t>(line_end - to_consume + 1));
+    }
+    std::memcpy(&line[written_out], to_consume, line_extra);
     maxed = false;
     if ((written_out + line_extra) < consumable) {
-        tail = (tail + line_extra) % fixed_size;
-    } else if (head <= tail && !empty()) {
-        tail = line_size;
+        tail_copy = (tail_copy + line_extra) % fixed_size;
+    } else if (head_copy <= tail_copy && !empty()) {
+        if (line_end == nullptr) {
+            tail_copy = written_out + will_consume;
+        } else {
+            tail_copy = line_size;
+        }
     } else {
-        tail = head;
+        tail_copy = head_copy;
     }
     line[written_out + line_extra] = '\0';
+    tail = tail_copy;
     return written_out + line_extra;
 }
