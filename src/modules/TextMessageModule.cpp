@@ -20,7 +20,11 @@ ProcessMessage TextMessageModule::handleReceived(const meshtastic_MeshPacket &mp
 
     // Only trigger screen wake if configuration allows it
     if (shouldWakeOnReceivedMessage()) {
+#ifdef ARDUINO_ARCH_RP2040
+        powerFSMTriggerBuffer.write(EVENT_RECEIVED_MSG);
+#else
         powerFSM.trigger(EVENT_RECEIVED_MSG);
+#endif
     }
     notifyObservers(&mp);
 

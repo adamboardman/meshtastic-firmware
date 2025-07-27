@@ -538,6 +538,14 @@ void PicoWBluetooth::shutdown() {
     __unlockBluetooth();
 }
 
+void PicoWBluetooth::restart() {
+    __lockBluetooth();
+    memset(lastToRadio, 0, MAX_TO_FROM_RADIO_SIZE);
+
+    hci_power_control(HCI_POWER_ON);
+    __unlockBluetooth();
+}
+
 void PicoWBluetooth::clearBonds() {
     LOG_ERROR("PicoWBluetooth::clearBonds - not implemented");
 }

@@ -92,8 +92,10 @@ void setBluetoothEnable(bool enable)
             if (!pico_w_bluetooth) {
                 LOG_DEBUG("Init PicoW Bluetooth");
                 pico_w_bluetooth = new PicoWBluetooth();
+                pico_w_bluetooth->setup();
+            } else {
+                pico_w_bluetooth->restart();
             }
-            pico_w_bluetooth->setup();
         } else {
             //shutdown bluetooth
             hci_power_control(HCI_POWER_OFF);
