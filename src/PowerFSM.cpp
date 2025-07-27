@@ -257,6 +257,10 @@ State stateON(onEnter, onIdle, NULL, "ON");
 State statePOWER(powerEnter, powerIdle, powerExit, "POWER");
 Fsm powerFSM(&stateBOOT);
 
+#ifdef ARDUINO_ARCH_RP2040
+void printAvailableLogging();
+#endif
+
 void PowerFSM_setup()
 {
     bool isRouter = (config.device.role == meshtastic_Config_DeviceConfig_Role_ROUTER ? 1 : 0);
@@ -401,6 +405,10 @@ void PowerFSM_setup()
     powerFSM.add_timed_transition(&stateDARK, &stateDARK,
                                   Default::getConfiguredOrDefaultMs(config.display.screen_on_secs, default_screen_on_secs), NULL,
                                   "Screen-on timeout");
+#endif
+
+#ifdef ARDUINO_ARCH_RP2040
+    printAvailableLogging();
 #endif
 
     powerFSM.run_machine(); // run one iteration of the state machine, so we run our on enter tasks for the initial DARK state

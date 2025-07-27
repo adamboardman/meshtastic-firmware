@@ -41,9 +41,9 @@ bool PowerStressModule::handleReceivedProtobuf(const meshtastic_MeshPacket &req,
             break;
 
         default:
-            if (currentMessage.cmd != meshtastic_PowerStressMessage_Opcode_UNSET)
+            if (currentMessage.cmd != meshtastic_PowerStressMessage_Opcode_UNSET) {
                 LOG_ERROR("PowerStress operation %d already in progress! Can't start new command", currentMessage.cmd);
-            else
+            } else
                 currentMessage = p; // copy for use by thread (the message provided to us will be getting freed)
             break;
         }

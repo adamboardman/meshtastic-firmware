@@ -45,6 +45,10 @@ the new node can build its node db)
 */
 
 MeshService *service;
+#ifdef ARDUINO_ARCH_RP2040
+CircularBuffer<char> serialLogBuffer(2000);
+CircularBuffer<int> powerFSMTriggerBuffer(3);
+#endif
 
 static MemoryDynamic<meshtastic_MqttClientProxyMessage> staticMqttClientProxyMessagePool;
 
@@ -110,9 +114,24 @@ int MeshService::handleFromRadio(const meshtastic_MeshPacket *mp)
     return 0;
 }
 
+#ifdef ARDUINO_ARCH_RP2040
+void printAvailableLogging();
+#endif
+
 /// Do idle processing (mostly processing messages which have been queued from the radio)
 void MeshService::loop()
 {
+#ifdef ARDUINO_ARCH_RP2040
+    printAvailableLogging();
+#endif
+
+#ifdef ARDUINO_ARCH_RP2040
+    // check for any waiting triggers that should be fired on behalf of interrupt based processing
+    while (!powerFSMTriggerBuffer.empty()) {
+        powerFSM.trigger(powerFSMTriggerBuffer.consume());
+    }
+#endif
+
     if (lastQueueStatus.free == 0) { // check if there is now free space in TX queue
         meshtastic_QueueStatus qs = router->getQueueStatus();
         if (qs.free != lastQueueStatus.free)

@@ -24,6 +24,7 @@
 #define MESHTASTIC_LOG_LEVEL_CRIT "CRIT "
 #define MESHTASTIC_LOG_LEVEL_TRACE "TRACE"
 
+#include "CircularBuffer.h"
 #include "SerialConsole.h"
 
 // If defined we will include support for ARM ICE "semihosting" for a virtual
@@ -46,12 +47,68 @@
 #define LOG_TRACE(...) SEGGER_RTT_printf(0, __VA_ARGS__)
 #else
 #if defined(DEBUG_PORT) && !defined(DEBUG_MUTE)
+#ifdef ARDUINO_ARCH_RP2040
+extern CircularBuffer<char> serialLogBuffer;
+
+inline void addThreadName() {
+    auto thread = concurrency::OSThread::currentThread;
+    if (thread) {
+        serialLogBuffer.write('[');
+        serialLogBuffer.writeF(thread->ThreadName.c_str());
+        serialLogBuffer.writeF("] ");
+    }
+}
+
+#define LOG_DEBUG(...) \
+    { \
+    serialLogBuffer.write('D'); \
+    addThreadName(); \
+    serialLogBuffer.writeF(__VA_ARGS__); \
+	serialLogBuffer.write('\n'); \
+	}
+#define LOG_INFO(...) \
+    { \
+    serialLogBuffer.write('I'); \
+    addThreadName(); \
+    serialLogBuffer.writeF(__VA_ARGS__); \
+    serialLogBuffer.write('\n'); \
+    }
+#define LOG_WARN(...) \
+    { \
+    serialLogBuffer.write('W'); \
+    addThreadName(); \
+    serialLogBuffer.writeF(__VA_ARGS__); \
+    serialLogBuffer.write('\n'); \
+    }
+#define LOG_ERROR(...) \
+    { \
+    serialLogBuffer.write('E'); \
+    addThreadName(); \
+    serialLogBuffer.writeF(__VA_ARGS__); \
+    serialLogBuffer.write('\n'); \
+    }
+#define LOG_CRIT(...) \
+    { \
+    serialLogBuffer.write('C'); \
+    addThreadName(); \
+    serialLogBuffer.writeF(__VA_ARGS__); \
+    serialLogBuffer.write('\n'); \
+    }
+#define LOG_TRACE(...) \
+    { \
+    serialLogBuffer.write('T'); \
+    addThreadName(); \
+    serialLogBuffer.writeF(__VA_ARGS__); \
+    serialLogBuffer.write('\n'); \
+    }
+#else
 #define LOG_DEBUG(...) DEBUG_PORT.log(MESHTASTIC_LOG_LEVEL_DEBUG, __VA_ARGS__)
 #define LOG_INFO(...) DEBUG_PORT.log(MESHTASTIC_LOG_LEVEL_INFO, __VA_ARGS__)
 #define LOG_WARN(...) DEBUG_PORT.log(MESHTASTIC_LOG_LEVEL_WARN, __VA_ARGS__)
 #define LOG_ERROR(...) DEBUG_PORT.log(MESHTASTIC_LOG_LEVEL_ERROR, __VA_ARGS__)
 #define LOG_CRIT(...) DEBUG_PORT.log(MESHTASTIC_LOG_LEVEL_CRIT, __VA_ARGS__)
 #define LOG_TRACE(...) DEBUG_PORT.log(MESHTASTIC_LOG_LEVEL_TRACE, __VA_ARGS__)
+#endif
 #else
 #define LOG_DEBUG(...)
 #define LOG_INFO(...)
