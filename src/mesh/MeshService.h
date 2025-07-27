@@ -10,6 +10,7 @@
 #include "MeshTypes.h"
 #include "Observer.h"
 #include "PointerQueue.h"
+#include "CircularBuffer.h"
 #if defined(ARCH_PORTDUINO)
 #include "../platform/portduino/SimRadio.h"
 #endif
@@ -164,9 +165,13 @@ class MeshService
     int onGPSChanged(const meshtastic::GPSStatus *arg);
 #endif
     /// Handle a packet that just arrived from the radio.  This method does _not_ free the provided packet.  If it
-    /// needs to keep the packet around it makes a copy
+    /// needs to keep the packet around, it makes a copy
     int handleFromRadio(const meshtastic_MeshPacket *p);
     friend class RoutingModule;
 };
 
 extern MeshService *service;
+#ifdef ARDUINO_ARCH_RP2040
+extern CircularBuffer<char> serialLogBuffer;
+extern CircularBuffer<int> powerFSMTriggerBuffer;
+#endif

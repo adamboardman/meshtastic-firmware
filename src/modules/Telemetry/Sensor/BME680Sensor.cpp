@@ -139,14 +139,14 @@ void BME680Sensor::updateState()
 
 void BME680Sensor::checkStatus(const char *functionName)
 {
-    if (bme680.status < BSEC_OK)
+    if (bme680.status < BSEC_OK) {
         LOG_ERROR("%s BSEC2 code: %d", functionName, bme680.status);
-    else if (bme680.status > BSEC_OK)
+    } else if (bme680.status > BSEC_OK)
         LOG_WARN("%s BSEC2 code: %d", functionName, bme680.status);
 
-    if (bme680.sensor.status < BME68X_OK)
+    if (bme680.sensor.status < BME68X_OK) {
         LOG_ERROR("%s BME68X code: %d", functionName, bme680.sensor.status);
-    else if (bme680.sensor.status > BME68X_OK)
+    } else if (bme680.sensor.status > BME68X_OK)
         LOG_WARN("%s BME68X code: %d", functionName, bme680.sensor.status);
 }
 

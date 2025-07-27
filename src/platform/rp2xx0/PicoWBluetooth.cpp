@@ -6,12 +6,15 @@
 #include "hci_dump_embedded_stdout.h"
 #include "hci.h"
 #include "main.h"
+#include "MeshService.h"
 #include "ble/att_db.h"
 #include "ble/att_server.h"
 #include "ble/att_db_util.h"
 #include "ble/le_device_db.h"
 #include "ble/sm.h"
 #include "include/meshtastic-profile.h"
+
+//we use a circular buffer to store logging as we are often in an interrupt service
 
 typedef struct {
     hci_con_handle_t connection_handle;
@@ -41,7 +44,10 @@ static uint8_t scan_response_meshtastic_data[] = {
 static const uint8_t scan_response_meshtastic_data_length = sizeof(scan_response_meshtastic_data);
 static_assert(scan_response_meshtastic_data_length <= 31);
 
-le_connection_t le_connection;
+le_connection_t le_connection_temp;
+le_connection_t le_connection_battery;
+le_connection_t le_connection_fromnum;
+le_connection_t *le_connection = nullptr;
 
 static btstack_packet_callback_registration_t hci_event_callback_registration;
 static btstack_packet_callback_registration_t sm_event_callback_registration;
@@ -52,16 +58,17 @@ bool connection_secured = false;
 uint32_t from_num = 0;
 
 void notify_callback_handler(void *context) {
-    LOG_INFO("notify_callback_handler calling att_server_notify\n");
-    if (context == &le_connection) {
-        const int err = att_server_notify(le_connection.connection_handle,
-                                          le_connection.value_handle,
-                                          le_connection.data,
-                                          le_connection.data_size);
+    LOG_INFO("notify_callback_handler calling att_server_notify");
+    if (context == &le_connection_fromnum) {
+        const int err = att_server_notify(le_connection_fromnum.connection_handle,
+                                          le_connection_fromnum.value_handle,
+                                          le_connection_fromnum.data,
+                                          le_connection_fromnum.data_size);
         if (err) {
-            LOG_INFO("notify_callback_handler - error!\n");
+            LOG_INFO("notify_callback_handler - error!");
         }
     }
+    //TODO support other notify callbacks
 }
 
 class BluetoothPhoneAPI : public PhoneAPI {
@@ -76,18 +83,18 @@ static BluetoothPhoneAPI *bluetoothPhoneAPI = nullptr;
  * Subclasses can use this as a hook to provide custom notifications for their transport (i.e. bluetooth notifies)
  */
 void BluetoothPhoneAPI::onNowHasData(uint32_t fromRadioNum) {
-    LOG_INFO("BLE notify fromNum");
+    LOG_INFO("BLE notify fromNum %d", fromRadioNum);
     __lockBluetooth();
 
     from_num = fromRadioNum;
-    if (le_connection.notification_enabled) {
+    if (le_connection_fromnum.notification_enabled) {
         LOG_DEBUG("onNowHasData - att_server_request_to_send_notification");
-        le_connection.value_handle = ATT_CHARACTERISTIC_ed9da18c_a800_4f66_a670_aa7547e34453_01_VALUE_HANDLE;
-        le_connection.data = reinterpret_cast<uint8_t *>(&from_num);
-        le_connection.data_size = sizeof(from_num);
+        le_connection_fromnum.value_handle = ATT_CHARACTERISTIC_ed9da18c_a800_4f66_a670_aa7547e34453_01_VALUE_HANDLE;
+        le_connection_fromnum.data = reinterpret_cast<uint8_t *>(&from_num);
+        le_connection_fromnum.data_size = sizeof(from_num);
         notify_context_callback_registration.callback = &notify_callback_handler;
-        notify_context_callback_registration.context = &le_connection;
-        att_server_request_to_send_notification(&notify_context_callback_registration, le_connection.connection_handle);
+        notify_context_callback_registration.context = &le_connection_fromnum;
+        att_server_request_to_send_notification(&notify_context_callback_registration, le_connection_fromnum.connection_handle);
     }
     __unlockBluetooth();
 }
@@ -95,7 +102,7 @@ void BluetoothPhoneAPI::onNowHasData(uint32_t fromRadioNum) {
 /// Check the current underlying physical link to see if the client is currently connected
 bool BluetoothPhoneAPI::checkIsConnected() {
     // see also PicoWBluetooth::isConnected()
-    return le_connection.connected || le_connection.notification_enabled || connection_secured;
+    return le_connection_fromnum.connected || le_connection_fromnum.notification_enabled || connection_secured;
 }
 
 static uint8_t fromRadioBytes[meshtastic_FromRadio_size];
@@ -124,20 +131,35 @@ void print_named_data(const char *name, uint8_t *data, uint16_t data_size) {
     LOG_DEBUG("%s", print_scratch);
 }
 
-static le_connection_t &connection_for_conn_handle(const hci_con_handle_t connection_handle) {
-    le_connection.connection_handle = connection_handle;
-    le_connection.notification_enabled = false;
-    le_connection.value_handle = 0x0;
-    le_connection.data = nullptr;
-    le_connection.data_size = 0;
+static le_connection_t *connection_for_conn_handle(const hci_con_handle_t connection_handle, const uint16_t att_handle) {
+    //assume single connection for now
+    le_connection_t *le_connection = nullptr;
+    switch (att_handle) {
+        case ATT_CHARACTERISTIC_ORG_BLUETOOTH_CHARACTERISTIC_TEMPERATURE_01_CLIENT_CONFIGURATION_HANDLE:
+            le_connection = &le_connection_temp;
+            le_connection->value_handle = ATT_CHARACTERISTIC_ORG_BLUETOOTH_CHARACTERISTIC_TEMPERATURE_01_VALUE_HANDLE;
+            break;
+        case ATT_CHARACTERISTIC_ORG_BLUETOOTH_CHARACTERISTIC_BATTERY_LEVEL_01_CLIENT_CONFIGURATION_HANDLE:
+            le_connection = &le_connection_battery;
+            le_connection->value_handle = ATT_CHARACTERISTIC_ORG_BLUETOOTH_CHARACTERISTIC_BATTERY_LEVEL_01_VALUE_HANDLE;
+            break;
+        case ATT_CHARACTERISTIC_ed9da18c_a800_4f66_a670_aa7547e34453_01_CLIENT_CONFIGURATION_HANDLE:
+            le_connection = &le_connection_fromnum;
+            le_connection->value_handle = ATT_CHARACTERISTIC_ed9da18c_a800_4f66_a670_aa7547e34453_01_VALUE_HANDLE;
+            break;
+    }
+    le_connection->connection_handle = connection_handle;
+    le_connection->notification_enabled = false;
+    le_connection->data = nullptr;
+    le_connection->data_size = 0;
     return le_connection;
 }
 
 uint16_t att_read_callback(hci_con_handle_t connection_handle, uint16_t att_handle, uint16_t offset, uint8_t *buffer,
                            uint16_t buffer_size) {
     UNUSED(connection_handle);
-    // LOG_DEBUG("att_read_callback(%02x,%02x,%d,buffer,%d)", connection_handle, att_handle, offset, buffer_size);
-    // print_named_data("att read buffer in", buffer, buffer_size);
+    LOG_DEBUG("att_read_callback(%02x,%02x,%d,buffer,%d)", connection_handle, att_handle, offset, buffer_size);
+    //print_named_data("att read buffer in", buffer, buffer_size);
 
     uint16_t size_used_or_needed = 0;
     switch (att_handle) {
@@ -157,38 +179,38 @@ uint16_t att_read_callback(hci_con_handle_t connection_handle, uint16_t att_hand
             memset(buffer, offset, buffer_size - offset);
             break;
         case ATT_CHARACTERISTIC_ed9da18c_a800_4f66_a670_aa7547e34453_01_VALUE_HANDLE:
-            // LOG_DEBUG("read fromnum - report most recently give number");
+            LOG_DEBUG("read fromnum - report most recently give number");
             size_used_or_needed = att_read_callback_handle_little_endian_32(from_num, offset, buffer, buffer_size);
             break;
         case ATT_CHARACTERISTIC_2c55e69e_4993_11ed_b878_0242ac120002_01_VALUE_HANDLE:
             memset(&buffer[offset], 0, buffer_size - offset);
             if (buffer_size == 0) {
-                // LOG_DEBUG("read fromradio - pull data from radio");
+                LOG_DEBUG("read fromradio - pull data from radio");
                 // A call with zero size buffer so read what we can send and find its size
                 // Grab the next message in the queue or make empty if the queue is empty
                 if (bluetoothPhoneAPI) {
                     size_used_or_needed = fromRadioNumBytes = bluetoothPhoneAPI->getFromRadio(fromRadioBytes);
                 }
             } else if (fromRadioNumBytes > 0) {
-                // LOG_DEBUG("read fromradio - pass along");
+                LOG_DEBUG("read fromradio - pass along");
                 // Second of a paired call so now we give the data we got last time
                 memcpy(&buffer[offset], &fromRadioBytes, min(buffer_size - offset, fromRadioNumBytes));
                 size_used_or_needed = fromRadioNumBytes;
             }
             break;
         case ATT_CHARACTERISTIC_f75c76d2_129e_4dad_a1dd_7866124401e7_01_VALUE_HANDLE:
-            // LOG_DEBUG("read toradio - this should never happen");
+            LOG_DEBUG("read toradio - this should never happen");
             memset(buffer, offset, buffer_size - offset);
             break;
         case ATT_CHARACTERISTIC_5a3d6e49_06e6_4423_9944_e9de8cdf9547_01_VALUE_HANDLE:
-            // LOG_DEBUG("read - A log message as LogRecord protobuf");
+            LOG_DEBUG("read - A log message as LogRecord protobuf");
             memset(buffer, offset, buffer_size - offset);
             break;
         default:
             LOG_DEBUG("attempt to read undefined att_handle: %02x", att_handle);
             break;
     }
-    // print_named_data("att read buffer out", buffer + offset, std::min(buffer_size, size_used_or_needed));
+    print_named_data("att read buffer out", buffer + offset, std::min(buffer_size, size_used_or_needed));
     return size_used_or_needed;
 }
 
@@ -197,72 +219,58 @@ int att_write_callback(hci_con_handle_t connection_handle, uint16_t att_handle, 
     UNUSED(transaction_mode);
     UNUSED(offset);
     UNUSED(buffer_size);
-    // LOG_DEBUG("att_write_callback(%02x,0x%02x,%d,%d,buffer,%d)", connection_handle, att_handle, transaction_mode,  offset, buffer_size);
-    // print_named_data("att write buffer in", buffer, buffer_size);
+    LOG_DEBUG("att_write_callback(0x%02x,0x%02x,%d,%d,buffer,%d)", connection_handle, att_handle, transaction_mode,  offset, buffer_size);
+    print_named_data("att write buffer in", buffer, buffer_size);
 
     if (transaction_mode != ATT_TRANSACTION_MODE_NONE) {
         switch (transaction_mode) {
             case ATT_TRANSACTION_MODE_NONE:
                 break;
             case ATT_TRANSACTION_MODE_ACTIVE:
-                // LOG_DEBUG("att_write_callback - ATT_TRANSACTION_MODE_ACTIVE");
+                LOG_DEBUG("att_write_callback - ATT_TRANSACTION_MODE_ACTIVE");
                 break;
             case ATT_TRANSACTION_MODE_EXECUTE:
-                // LOG_DEBUG("att_write_callback - ATT_TRANSACTION_MODE_EXECUTE");
+                LOG_DEBUG("att_write_callback - ATT_TRANSACTION_MODE_EXECUTE");
                 break;
             case ATT_TRANSACTION_MODE_CANCEL:
-                // LOG_DEBUG("att_write_callback - ATT_TRANSACTION_MODE_CANCEL");
+                LOG_DEBUG("att_write_callback - ATT_TRANSACTION_MODE_CANCEL");
                 break;
             case ATT_TRANSACTION_MODE_VALIDATE:
-                // LOG_DEBUG("att_write_callback - ATT_TRANSACTION_MODE_VALIDATE");
+                LOG_DEBUG("att_write_callback - ATT_TRANSACTION_MODE_VALIDATE");
                 break;
             default:
                 break;
         }
         return 0;
     }
-    le_connection_t &context = connection_for_conn_handle(connection_handle);
 
     switch (att_handle) {
         case ATT_CHARACTERISTIC_ORG_BLUETOOTH_CHARACTERISTIC_TEMPERATURE_01_CLIENT_CONFIGURATION_HANDLE:
         case ATT_CHARACTERISTIC_ORG_BLUETOOTH_CHARACTERISTIC_BATTERY_LEVEL_01_CLIENT_CONFIGURATION_HANDLE:
         case ATT_CHARACTERISTIC_ed9da18c_a800_4f66_a670_aa7547e34453_01_CLIENT_CONFIGURATION_HANDLE: {
-            context.notification_enabled = little_endian_read_16(buffer, 0) ==
+            le_connection_t *context = connection_for_conn_handle(connection_handle, att_handle);
+            context->notification_enabled = little_endian_read_16(buffer, 0) ==
                                            GATT_CLIENT_CHARACTERISTICS_CONFIGURATION_NOTIFICATION;
-            context.connection_handle = connection_handle;
-            if (context.notification_enabled) {
-                switch (att_handle) {
-                    case ATT_CHARACTERISTIC_ORG_BLUETOOTH_CHARACTERISTIC_TEMPERATURE_01_CLIENT_CONFIGURATION_HANDLE:
-                        context.value_handle =
-                                ATT_CHARACTERISTIC_ORG_BLUETOOTH_CHARACTERISTIC_TEMPERATURE_01_VALUE_HANDLE;
-                        break;
-                    case ATT_CHARACTERISTIC_ORG_BLUETOOTH_CHARACTERISTIC_BATTERY_LEVEL_01_CLIENT_CONFIGURATION_HANDLE:
-                        context.value_handle =
-                                ATT_CHARACTERISTIC_ORG_BLUETOOTH_CHARACTERISTIC_BATTERY_LEVEL_01_VALUE_HANDLE;
-                        break;
-                    case ATT_CHARACTERISTIC_ed9da18c_a800_4f66_a670_aa7547e34453_01_CLIENT_CONFIGURATION_HANDLE:
-                        context.value_handle = ATT_CHARACTERISTIC_ed9da18c_a800_4f66_a670_aa7547e34453_01_VALUE_HANDLE;
-                        break;
-                    default:
-                        break;
-                }
+            context->connection_handle = connection_handle;
+            if (context->notification_enabled) {
                 att_server_request_can_send_now_event(connection_handle);
             }
+            le_connection = context;
             break;
         }
         case ATT_CHARACTERISTIC_f75c76d2_129e_4dad_a1dd_7866124401e7_01_VALUE_HANDLE: {
-            // LOG_DEBUG("write toradio");
+            LOG_DEBUG("write toradio");
 
             auto len = buffer_size - offset;
-            // LOG_DEBUG("toRadioWriteCb data %p, len %u", data, len);
+            LOG_DEBUG("toRadioWriteCb data %p, len %u", &buffer[offset], len);
             if (memcmp(&lastToRadio, &buffer[offset], len) != 0) {
-                // LOG_DEBUG("New ToRadio packet");
+                LOG_DEBUG("New ToRadio packet");
                 memcpy(&lastToRadio, &buffer[offset], len);
                 if (bluetoothPhoneAPI) {
                     bluetoothPhoneAPI->handleToRadio(&buffer[offset], len);
                 }
             } else {
-                // LOG_DEBUG("Drop dup ToRadio packet we just saw");
+                LOG_DEBUG("Drop dup ToRadio packet we just saw");
             }
             break;
         }
@@ -319,28 +327,40 @@ void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, 
     UNUSED(size);
     UNUSED(channel);
     bd_addr_t local_addr;
-    // LOG_DEBUG("hci_packet_handler(0x%02x,%d,data,%d)", packet_type, channel, size);
+    LOG_DEBUG("hci_packet_handler(0x%02x,%d,data,%d)", packet_type, channel, size);
 
-    // print_named_data("hci_packet", packet, size);
+    print_named_data("hci_packet", packet, size);
 
     if (packet_type != HCI_EVENT_PACKET) return;
 
     uint8_t event_type = hci_event_packet_get_type(packet);
-    // LOG_DEBUG("event_type: 0x%02x", event_type);
+    LOG_DEBUG("event_type: 0x%02x", event_type);
     switch (event_type) {
         case BTSTACK_EVENT_STATE: //0x60
             if (btstack_event_state_get_state(packet) != HCI_STATE_WORKING) return;
             gap_local_bd_addr(local_addr);
-            // LOG_DEBUG("BTstack up and running on: %s", bd_addr_to_str(local_addr));
+            LOG_DEBUG("BTstack up and running on: %s", bd_addr_to_str(local_addr));
             setup_advertisements();
             break;
 
         case HCI_EVENT_DISCONNECTION_COMPLETE: //0x05
-            // LOG_DEBUG("tidying connection: %02x, %02x, %d", le_connection.connection_handle, le_connection.value_handle, le_connection.notification_enabled);
-            le_connection.notification_enabled = 0;
-            // LOG_DEBUG("LE Connection 0x%04x : disconnect, reason %02x", le_connection.connection_handle, hci_event_disconnection_complete_get_reason(packet));
+            LOG_DEBUG("tidying connection: 0x%02x, 0x%02x, enabled: %d", le_connection->connection_handle, le_connection->value_handle, le_connection->notification_enabled);
+            //le_connection.notification_enabled = 0;
+            LOG_DEBUG("LE Connection 0x%04x : disconnect, reason 0x%02x", le_connection->connection_handle, hci_event_disconnection_complete_get_reason(packet));
             break;
 
+        case SM_EVENT_PAIRING_STARTED: //0xd4
+            LOG_DEBUG("Pairing Started");
+            break;
+        case SM_EVENT_PAIRING_COMPLETE: //0xd5
+            LOG_DEBUG("Pairing Complete");
+            break;
+        case BTSTACK_EVENT_NR_CONNECTIONS_CHANGED: {
+            //0x61
+            const uint8_t connections = btstack_event_nr_connections_changed_get_number_connections(packet);
+            LOG_DEBUG("Number of connections changed: %d", connections);
+            break;
+        }
 
         default:
             break;
@@ -351,27 +371,29 @@ void att_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, 
     UNUSED(size);
     UNUSED(channel);
     bd_addr_t local_addr;
-    // LOG_DEBUG("att_packet_handler(0x%02x,%d,data,%d)", packet_type, channel, size);
+    LOG_DEBUG("att_packet_handler(0x%02x,%d,data,%d)", packet_type, channel, size);
     if (packet_type != HCI_EVENT_PACKET) return;
 
-    // print_named_data("att_packet", packet, size);
+    print_named_data("att_packet", packet, size);
 
     uint8_t event_type = hci_event_packet_get_type(packet);
-    // LOG_DEBUG("event_type: 0x%02x", event_type);
+    LOG_DEBUG("event_type: 0x%02x", event_type);
     switch (event_type) {
         case ATT_EVENT_CAN_SEND_NOW: //0xb7
-            if (le_connection.notification_enabled) {
-                // LOG_DEBUG("att_server_notify(%02x,%02x,%d,%d)", le_connection.connection_handle, le_connection.value_handle, le_connection.data, le_connection.data_size);
-                att_server_notify(le_connection.connection_handle, le_connection.value_handle,
-                                  (uint8_t *) &le_connection.data, le_connection.data_size);
+            if (le_connection->notification_enabled) {
+                LOG_DEBUG("att_server_notify(0x%02x,0x%02x,%d,%d)", le_connection->connection_handle, le_connection->value_handle, le_connection->data, le_connection->data_size);
+                att_server_notify(le_connection->connection_handle, le_connection->value_handle,
+                                  (uint8_t *) &le_connection->data, le_connection->data_size);
             }
 
             break;
         case ATT_EVENT_CONNECTED: //0xb3
-            le_connection.connected = true;
+            LOG_DEBUG("Connected");
+            le_connection->connected = true;
             break;
         case ATT_EVENT_DISCONNECTED: //0xb4
-            le_connection.connected = false;
+            LOG_DEBUG("Disconnected");
+            le_connection->connected = false;
             break;
 
         default:
@@ -382,24 +404,30 @@ void att_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, 
 static void sm_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size) {
     UNUSED(channel);
     UNUSED(size);
-    // LOG_DEBUG("sm_packet_handler(0x%02x,%d,data,%d)", packet_type, channel, size);
+    LOG_DEBUG("sm_packet_handler(0x%02x,%d,data,%d)", packet_type, channel, size);
     if (packet_type != HCI_EVENT_PACKET) return;
 
-    // print_named_data("sm_packet", packet, size);
+    print_named_data("sm_packet", packet, size);
 
     uint8_t event_packet_type = hci_event_packet_get_type(packet);
     LOG_DEBUG("event_packet_type: 0x%02x", event_packet_type);
     switch (event_packet_type) {
         case SM_EVENT_JUST_WORKS_REQUEST:
-            // LOG_DEBUG("Just works requested");
+            LOG_DEBUG("Just works requested");
             sm_just_works_confirm(sm_event_just_works_request_get_handle(packet));
             break;
         case SM_EVENT_NUMERIC_COMPARISON_REQUEST:
-            // LOG_DEBUG("Confirming numeric comparison: %d", sm_event_numeric_comparison_request_get_passkey(packet));
+            LOG_DEBUG("Confirming numeric comparison: %d", sm_event_numeric_comparison_request_get_passkey(packet));
             sm_numeric_comparison_confirm(sm_event_passkey_display_number_get_handle(packet));
             break;
         case SM_EVENT_PASSKEY_DISPLAY_NUMBER:
-            LOG_DEBUG("Display Passkey: %d", sm_event_passkey_display_number_get_passkey(packet));
+            LOG_INFO("Display Passkey: %d", sm_event_passkey_display_number_get_passkey(packet));
+            break;
+        case SM_EVENT_IDENTITY_RESOLVING_STARTED:
+            LOG_DEBUG("Identity Resolving Started");
+            break;
+        case SM_EVENT_IDENTITY_RESOLVING_FAILED:
+            LOG_DEBUG("Identity Resolving Failed");
             break;
         case SM_EVENT_PAIRING_COMPLETE:
             switch (sm_event_pairing_complete_get_status(packet)) {
@@ -430,11 +458,11 @@ static void sm_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *pa
 
     if (connection_secured) {
         // continue - query primary services
-        // LOG_INFO("BLE pair success");
+        LOG_INFO("BLE pair success");
         bluetoothStatus->updateStatus(
             new meshtastic::BluetoothStatus(meshtastic::BluetoothStatus::ConnectionState::CONNECTED));
     } else if (event_packet_type == SM_EVENT_PAIRING_COMPLETE) {
-        // LOG_INFO("BLE pair failed");
+        LOG_INFO("BLE pair failed");
         // Notify UI (or any other interested firmware components)
         bluetoothStatus->updateStatus(
             new meshtastic::BluetoothStatus(meshtastic::BluetoothStatus::ConnectionState::DISCONNECTED));
@@ -448,6 +476,8 @@ PicoWBluetooth::~PicoWBluetooth() {
     delete bluetoothPhoneAPI;
     bluetoothPhoneAPI = nullptr;
 }
+
+void printAvailableLogging();
 
 void PicoWBluetooth::setup() {
     __lockBluetooth();
@@ -466,6 +496,9 @@ void PicoWBluetooth::setup() {
     } else {
         LOG_DEBUG("Bluetooth pin will be generated on the fly as needed");
     }
+#ifdef ARDUINO_ARCH_RP2040
+    printAvailableLogging();
+#endif
     if (config.has_display) {
         sm_set_io_capabilities(IO_CAPABILITY_DISPLAY_ONLY);
     }
@@ -484,6 +517,11 @@ void PicoWBluetooth::setup() {
     LOG_DEBUG("register for ATT event");
     att_server_register_packet_handler(att_packet_handler);
     hci_power_control(HCI_POWER_ON);
+
+#ifdef ARDUINO_ARCH_RP2040
+    printAvailableLogging();
+#endif
+
     __unlockBluetooth();
 }
 
@@ -506,7 +544,7 @@ void PicoWBluetooth::clearBonds() {
 
 bool PicoWBluetooth::isConnected() {
     //see also BluetoothPhoneAPI::checkIsConnected()
-    return le_connection.connected || le_connection.notification_enabled || connection_secured;
+    return le_connection->connected || le_connection->notification_enabled || connection_secured;
 }
 
 int PicoWBluetooth::getRssi() {

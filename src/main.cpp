@@ -290,6 +290,10 @@ __attribute__((weak, noinline)) bool loopCanSleep()
 void lateInitVariant() __attribute__((weak));
 void lateInitVariant() {}
 
+#ifdef ARDUINO_ARCH_RP2040
+void printAvailableLogging();
+#endif
+
 /**
  * Print info as a structured log message (for automated log processing)
  */
@@ -300,6 +304,9 @@ void printInfo()
 #ifndef PIO_UNIT_TESTING
 void setup()
 {
+#ifdef ARDUINO_ARCH_RP2040
+    printAvailableLogging();
+#endif
 
 #if defined(PIN_POWER_EN)
     pinMode(PIN_POWER_EN, OUTPUT);
@@ -430,7 +437,10 @@ void setup()
     powerMonInit();
     serialSinceMsec = millis();
 
-    LOG_INFO("\n\n//\\ E S H T /\\ S T / C\n");
+    LOG_INFO("//\\ E S H T /\\ S T / C");
+#ifdef ARDUINO_ARCH_RP2040
+    printAvailableLogging();
+#endif
 
     initDeepSleep();
 
@@ -518,6 +528,10 @@ void setup()
     ledPeriodic = new Periodic("Blink", ledBlinker);
 #endif
 
+#ifdef ARDUINO_ARCH_RP2040
+    printAvailableLogging();
+#endif
+
     fsInit();
 
 #if !MESHTASTIC_EXCLUDE_I2C
@@ -549,6 +563,10 @@ void setup()
 #endif
 #endif
 
+#ifdef ARDUINO_ARCH_RP2040
+    printAvailableLogging();
+#endif
+
 #ifdef PIN_LCD_RESET
     // FIXME - move this someplace better, LCD is at address 0x3F
     pinMode(PIN_LCD_RESET, OUTPUT);
@@ -570,6 +588,10 @@ void setup()
     power->setStatusHandler(powerStatus);
     powerStatus->observe(&power->newStatus);
     power->setup(); // Must be after status handler is installed, so that handler gets notified of the initial configuration
+
+#ifdef ARDUINO_ARCH_RP2040
+    printAvailableLogging();
+#endif
 
 #if !MESHTASTIC_EXCLUDE_I2C
     // We need to scan here to decide if we have a screen for nodeDB.init() and because power has been applied to
@@ -610,6 +632,10 @@ void setup()
         LOG_DEBUG("suppress screen wake because this is a headless timer wakeup");
         i2cScanner->setSuppressScreen();
     }
+#endif
+
+#ifdef ARDUINO_ARCH_RP2040
+    printAvailableLogging();
 #endif
 
     auto screenInfo = i2cScanner->firstScreen();
@@ -709,6 +735,10 @@ void setup()
     LOG_DEBUG("acc_info = %i", acc_info.type);
 #endif
 
+#ifdef ARDUINO_ARCH_RP2040
+    printAvailableLogging();
+#endif
+
     scannerToSensorsMap(i2cScanner, ScanI2C::DeviceType::BME_680, meshtastic_TelemetrySensorType_BME680);
     scannerToSensorsMap(i2cScanner, ScanI2C::DeviceType::BME_280, meshtastic_TelemetrySensorType_BME280);
     scannerToSensorsMap(i2cScanner, ScanI2C::DeviceType::BMP_280, meshtastic_TelemetrySensorType_BMP280);
@@ -767,6 +797,10 @@ void setup()
     LOG_INFO("Build timestamp: %ld", BUILD_EPOCH);
 #endif
 
+#ifdef ARDUINO_ARCH_RP2040
+    printAvailableLogging();
+#endif
+
 #ifdef ARCH_ESP32
     esp32Setup();
 #endif
@@ -777,6 +811,10 @@ void setup()
 
 #ifdef ARCH_RP2040
     rp2040Setup();
+#endif
+
+#ifdef ARDUINO_ARCH_RP2040
+    printAvailableLogging();
 #endif
 
     // We do this as early as possible because this loads preferences from flash
@@ -801,9 +839,9 @@ void setup()
     // only play start melody when role is not tracker or sensor
     if (config.power.is_power_saving == true &&
         IS_ONE_OF(config.device.role, meshtastic_Config_DeviceConfig_Role_TRACKER,
-                  meshtastic_Config_DeviceConfig_Role_TAK_TRACKER, meshtastic_Config_DeviceConfig_Role_SENSOR))
+                  meshtastic_Config_DeviceConfig_Role_TAK_TRACKER, meshtastic_Config_DeviceConfig_Role_SENSOR)) {
         LOG_DEBUG("Tracker/Sensor: Skip start melody");
-    else
+    } else
         playStartMelody();
 
     // fixed screen override?
@@ -895,6 +933,10 @@ void setup()
     }
 #endif // HAS_SCREEN
 
+#ifdef ARDUINO_ARCH_RP2040
+    printAvailableLogging();
+#endif
+
     // setup TZ prior to time actions.
 #if !MESHTASTIC_EXCLUDE_TZ
     LOG_DEBUG("Use compiled/slipstreamed %s", slipstreamTZString); // important, removing this clobbers our magic string
@@ -911,6 +953,10 @@ void setup()
     }
     tzset();
     LOG_DEBUG("Set Timezone to %s", getenv("TZ"));
+#endif
+
+#ifdef ARDUINO_ARCH_RP2040
+    printAvailableLogging();
 #endif
 
     readFromRTC(); // read the main CPU RTC at first (in case we can't get GPS time)
@@ -958,6 +1004,10 @@ void setup()
     service = new MeshService();
     service->init();
 
+#ifdef ARDUINO_ARCH_RP2040
+    printAvailableLogging();
+#endif
+
     // Now that the mesh service is created, create any modules
     setupModules();
 
@@ -971,6 +1021,10 @@ void setup()
         service->sendClientNotification(cn);
         nodeDB->hasWarned = true;
     }
+
+#ifdef ARDUINO_ARCH_RP2040
+    printAvailableLogging();
+#endif
 
 // buttons are now inputBroker, so have to come after setupModules
 #if HAS_BUTTON
@@ -1263,6 +1317,10 @@ void setup()
     }
 #endif
 
+#ifdef ARDUINO_ARCH_RP2040
+    printAvailableLogging();
+#endif
+
 #if defined(USE_SX1262) && !defined(ARCH_PORTDUINO) && !defined(TCXO_OPTIONAL) && RADIOLIB_EXCLUDE_SX126X != 1
     if ((!rIf) && (config.lora.region != meshtastic_Config_LoRaConfig_RegionCode_LORA_24)) {
         auto *sxIf = new SX1262Interface(RadioLibHAL, SX126X_CS, SX126X_DIO1, SX126X_RESET, SX126X_BUSY);
@@ -1279,6 +1337,10 @@ void setup()
             radioType = SX1262_RADIO;
         }
     }
+#endif
+
+#ifdef ARDUINO_ARCH_RP2040
+    printAvailableLogging();
 #endif
 
 #if defined(USE_SX1262) && !defined(ARCH_PORTDUINO) && defined(TCXO_OPTIONAL)
@@ -1426,6 +1488,10 @@ void setup()
         }
     }
 
+#ifdef ARDUINO_ARCH_RP2040
+    printAvailableLogging();
+#endif
+
     lateInitVariant(); // Do board specific init (see extra_variants/README.md for documentation)
 
 #if !MESHTASTIC_EXCLUDE_MQTT
@@ -1444,6 +1510,10 @@ void setup()
         // Initialize Wifi
 #if HAS_WIFI
     initWifi();
+#endif
+
+#ifdef ARDUINO_ARCH_RP2040
+    printAvailableLogging();
 #endif
 
 #if HAS_ETHERNET
@@ -1494,8 +1564,16 @@ void setup()
     LOG_DEBUG("Free PSRAM : %7d bytes", ESP.getFreePsram());
 #endif
 
+#ifdef ARDUINO_ARCH_RP2040
+    printAvailableLogging();
+#endif
+
     // We manually run this to update the NodeStatus
     nodeDB->notifyObservers(true);
+
+#ifdef ARDUINO_ARCH_RP2040
+    printAvailableLogging();
+#endif
 }
 
 #endif

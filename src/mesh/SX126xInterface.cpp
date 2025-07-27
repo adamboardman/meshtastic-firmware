@@ -59,9 +59,9 @@ template <typename T> bool SX126xInterface<T>::init()
         pinMode(settingsMap[sx126x_ant_sw_pin], OUTPUT);
     }
 #endif
-    if (tcxoVoltage == 0.0)
+    if (tcxoVoltage == 0.0) {
         LOG_DEBUG("SX126X_DIO3_TCXO_VOLTAGE not defined, not using DIO3 as TCXO reference voltage");
-    else
+    } else
         LOG_DEBUG("SX126X_DIO3_TCXO_VOLTAGE defined, using DIO3 as TCXO reference voltage at %f V", tcxoVoltage);
 
     // FIXME: May want to set depending on a definition, currently all SX126x variant files use the DC-DC regulator option

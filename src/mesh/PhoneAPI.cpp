@@ -50,6 +50,7 @@ void PhoneAPI::handleStartConfig()
     // Must be before setting state (because state is how we know !connected)
     if (!isConnected()) {
         onConnectionChanged(true);
+        LOG_INFO("PhoneAPI::handleStartConfig - observe - fromNumChanged");
         observe(&service->fromNumChanged);
 #ifdef FSCom
         observe(&xModem.packetReady);
@@ -82,6 +83,7 @@ void PhoneAPI::close()
     if (state != STATE_SEND_NOTHING) {
         state = STATE_SEND_NOTHING;
         resetReadIndex();
+        LOG_DEBUG("PhoneAPI::handleStartConfig - unobserve - fromNumChanged");
         unobserve(&service->fromNumChanged);
 #ifdef FSCom
         unobserve(&xModem.packetReady);
@@ -121,7 +123,11 @@ bool PhoneAPI::checkConnectionTimeout()
  */
 bool PhoneAPI::handleToRadio(const uint8_t *buf, size_t bufLength)
 {
+#ifdef ARDUINO_ARCH_RP2040
+    powerFSMTriggerBuffer.write(EVENT_CONTACT_FROM_PHONE); // As long as the phone keeps talking to us, don't let the radio go to sleep
+#else
     powerFSM.trigger(EVENT_CONTACT_FROM_PHONE); // As long as the phone keeps talking to us, don't let the radio go to sleep
+#endif
     lastContactMsec = millis();
 
     memset(&toRadioScratch, 0, sizeof(toRadioScratch));
@@ -562,6 +568,7 @@ void PhoneAPI::releaseClientNotification()
  */
 bool PhoneAPI::available()
 {
+    LOG_DEBUG("PhoneAPI::available - state: %d\n", state);
     switch (state) {
     case STATE_SEND_NOTHING:
         return false;

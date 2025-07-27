@@ -196,3 +196,50 @@ inline bool Syslog::_sendLog(uint16_t pri, const char *appName, const char *mess
 }
 
 #endif
+
+#ifdef ARDUINO_ARCH_RP2040
+#define SERIAL_LOG_BUFFER_LEN 160 //matches RedirectablePrint::vprintf - printBuf[160];
+
+void printAvailableLogging() {
+    static char line[SERIAL_LOG_BUFFER_LEN];
+    // check for any logging that may have happened during servicing an interrupt
+    if (serialLogBuffer.full()) {
+        auto len = serialLogBuffer.consume_line(line, SERIAL_LOG_BUFFER_LEN-1);
+        DEBUG_PORT.log(MESHTASTIC_LOG_LEVEL_DEBUG, "Buffer Maxed - Ignoring %d bytes tail of partial line", len);
+    }
+
+    while (!serialLogBuffer.empty()) {
+        auto len = serialLogBuffer.consume_line(line, SERIAL_LOG_BUFFER_LEN-1);
+        if (line[len-1]=='\n') {
+            line[len-1] = '\0';
+        } else {
+            line[len] = '\0';
+        }
+        switch (line[0]) {
+            case 'D':
+                DEBUG_PORT.log(MESHTASTIC_LOG_LEVEL_DEBUG, &line[1]);
+                break;
+            case 'I':
+                DEBUG_PORT.log(MESHTASTIC_LOG_LEVEL_INFO, &line[1]);
+                break;
+            case 'W':
+                DEBUG_PORT.log(MESHTASTIC_LOG_LEVEL_WARN, &line[1]);
+                break;
+            case 'E':
+                DEBUG_PORT.log(MESHTASTIC_LOG_LEVEL_ERROR, &line[1]);
+                break;
+            case 'C':
+                DEBUG_PORT.log(MESHTASTIC_LOG_LEVEL_CRIT, &line[1]);
+                break;
+            case 'T':
+                DEBUG_PORT.log(MESHTASTIC_LOG_LEVEL_TRACE, &line[1]);
+                break;
+            default:
+                //Previous line didn't fit within buffer or we didn't populate with type
+                DEBUG_PORT.log("CTD", line);
+                break;
+        }
+    }
+    serialLogBuffer.clear_if_empty(); //try to keep logging within only one block
+}
+#endif

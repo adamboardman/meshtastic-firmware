@@ -158,6 +158,8 @@ void RedirectablePrint::log_to_serial(const char *logLevel, const char *format, 
         printf("| ??:??:?? %u ", millis() / 1000);
 #endif
     }
+
+#ifndef ARDUINO_ARCH_RP2040
     auto thread = concurrency::OSThread::currentThread;
     if (thread) {
         print("[");
@@ -166,6 +168,8 @@ void RedirectablePrint::log_to_serial(const char *logLevel, const char *format, 
         print(thread->ThreadName);
         print("] ");
     }
+#endif
+
     r += vprintf(logLevel, format, arg);
 }
 
