@@ -20,6 +20,8 @@ public:
 
     void shutdown();
 
+    void restart();
+
     void clearBonds();
 
     bool isConnected();
