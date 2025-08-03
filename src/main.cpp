@@ -305,6 +305,7 @@ void printInfo()
 void setup()
 {
 #ifdef ARDUINO_ARCH_RP2040
+    initVariant(); //Needs to happen within a FreeRTOS task after move from PICO_CYW43_ARCH_THREADSAFE_BACKGROUND to PICO_CYW43_ARCH_FREERTOS
     printAvailableLogging();
 #endif
 
