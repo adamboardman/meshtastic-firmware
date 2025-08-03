@@ -90,7 +90,7 @@ void setBluetoothEnable(bool enable)
     if (config.bluetooth.enabled == true) {
         if (enable) {
             if (!pico_w_bluetooth) {
-                LOG_DEBUG("Init PicoW Bluetooth");
+                LOG_DEBUG("Init PicoWBluetooth");
                 pico_w_bluetooth = new PicoWBluetooth();
                 pico_w_bluetooth->setup();
             } else {
