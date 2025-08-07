@@ -83,12 +83,12 @@ static BluetoothPhoneAPI *bluetoothPhoneAPI = nullptr;
  * Subclasses can use this as a hook to provide custom notifications for their transport (i.e. bluetooth notifies)
  */
 void BluetoothPhoneAPI::onNowHasData(uint32_t fromRadioNum) {
-    LOG_INFO("BLE notify fromNum %d", fromRadioNum);
+    // LOG_INFO("BLE notify fromNum %d", fromRadioNum);
     __lockBluetooth();
 
     from_num = fromRadioNum;
     if (le_connection_fromnum.notification_enabled) {
-        LOG_DEBUG("onNowHasData - att_server_request_to_send_notification");
+        // LOG_DEBUG("onNowHasData - att_server_request_to_send_notification");
         le_connection_fromnum.value_handle = ATT_CHARACTERISTIC_ed9da18c_a800_4f66_a670_aa7547e34453_01_VALUE_HANDLE;
         le_connection_fromnum.data = reinterpret_cast<uint8_t *>(&from_num);
         le_connection_fromnum.data_size = sizeof(from_num);
@@ -158,8 +158,7 @@ static le_connection_t *connection_for_conn_handle(const hci_con_handle_t connec
 uint16_t att_read_callback(hci_con_handle_t connection_handle, uint16_t att_handle, uint16_t offset, uint8_t *buffer,
                            uint16_t buffer_size) {
     UNUSED(connection_handle);
-    LOG_DEBUG("att_read_callback(%02x,%02x,%d,buffer,%d)", connection_handle, att_handle, offset, buffer_size);
-    //print_named_data("att read buffer in", buffer, buffer_size);
+    // LOG_DEBUG("att_read_callback(%02x,%02x,%d,buffer,%d)", connection_handle, att_handle, offset, buffer_size);
 
     uint16_t size_used_or_needed = 0;
     switch (att_handle) {
@@ -185,32 +184,32 @@ uint16_t att_read_callback(hci_con_handle_t connection_handle, uint16_t att_hand
         case ATT_CHARACTERISTIC_2c55e69e_4993_11ed_b878_0242ac120002_01_VALUE_HANDLE:
             memset(&buffer[offset], 0, buffer_size - offset);
             if (buffer_size == 0) {
-                LOG_DEBUG("read fromradio - pull data from radio");
+                // LOG_DEBUG("read fromradio - pull data from radio");
                 // A call with zero size buffer so read what we can send and find its size
                 // Grab the next message in the queue or make empty if the queue is empty
                 if (bluetoothPhoneAPI) {
                     size_used_or_needed = fromRadioNumBytes = bluetoothPhoneAPI->getFromRadio(fromRadioBytes);
                 }
             } else if (fromRadioNumBytes > 0) {
-                LOG_DEBUG("read fromradio - pass along");
+                // LOG_DEBUG("read fromradio - pass along");
                 // Second of a paired call so now we give the data we got last time
                 memcpy(&buffer[offset], &fromRadioBytes, min(buffer_size - offset, fromRadioNumBytes));
                 size_used_or_needed = fromRadioNumBytes;
             }
             break;
         case ATT_CHARACTERISTIC_f75c76d2_129e_4dad_a1dd_7866124401e7_01_VALUE_HANDLE:
-            LOG_DEBUG("read toradio - this should never happen");
+            // LOG_DEBUG("read toradio - this should never happen");
             memset(buffer, offset, buffer_size - offset);
             break;
         case ATT_CHARACTERISTIC_5a3d6e49_06e6_4423_9944_e9de8cdf9547_01_VALUE_HANDLE:
-            LOG_DEBUG("read - A log message as LogRecord protobuf");
+            // LOG_DEBUG("read - A log message as LogRecord protobuf");
             memset(buffer, offset, buffer_size - offset);
             break;
         default:
             LOG_DEBUG("attempt to read undefined att_handle: %02x", att_handle);
             break;
     }
-    print_named_data("att read buffer out", buffer + offset, std::min(buffer_size, size_used_or_needed));
+    // print_named_data("att read buffer out", buffer + offset, std::min(buffer_size, size_used_or_needed));
     return size_used_or_needed;
 }
 
@@ -219,8 +218,8 @@ int att_write_callback(hci_con_handle_t connection_handle, uint16_t att_handle, 
     UNUSED(transaction_mode);
     UNUSED(offset);
     UNUSED(buffer_size);
-    LOG_DEBUG("att_write_callback(0x%02x,0x%02x,%d,%d,buffer,%d)", connection_handle, att_handle, transaction_mode,  offset, buffer_size);
-    print_named_data("att write buffer in", buffer, buffer_size);
+    // LOG_DEBUG("att_write_callback(0x%02x,0x%02x,%d,%d,buffer,%d)", connection_handle, att_handle, transaction_mode,  offset, buffer_size);
+    // print_named_data("att write buffer in", buffer, buffer_size);
 
     if (transaction_mode != ATT_TRANSACTION_MODE_NONE) {
         switch (transaction_mode) {
@@ -259,18 +258,18 @@ int att_write_callback(hci_con_handle_t connection_handle, uint16_t att_handle, 
             break;
         }
         case ATT_CHARACTERISTIC_f75c76d2_129e_4dad_a1dd_7866124401e7_01_VALUE_HANDLE: {
-            LOG_DEBUG("write toradio");
+            // LOG_DEBUG("write toradio");
 
             auto len = buffer_size - offset;
-            LOG_DEBUG("toRadioWriteCb data %p, len %u", &buffer[offset], len);
+            // LOG_DEBUG("toRadioWriteCb data %p, len %u", &buffer[offset], len);
             if (memcmp(&lastToRadio, &buffer[offset], len) != 0) {
-                LOG_DEBUG("New ToRadio packet");
+                // LOG_DEBUG("New ToRadio packet");
                 memcpy(&lastToRadio, &buffer[offset], len);
                 if (bluetoothPhoneAPI) {
                     bluetoothPhoneAPI->handleToRadio(&buffer[offset], len);
                 }
             } else {
-                LOG_DEBUG("Drop dup ToRadio packet we just saw");
+                // LOG_DEBUG("Drop dup ToRadio packet we just saw");
             }
             break;
         }
@@ -327,14 +326,13 @@ void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, 
     UNUSED(size);
     UNUSED(channel);
     bd_addr_t local_addr;
-    LOG_DEBUG("hci_packet_handler(0x%02x,%d,data,%d)", packet_type, channel, size);
-
-    print_named_data("hci_packet", packet, size);
+    // LOG_DEBUG("hci_packet_handler(0x%02x,%d,data,%d)", packet_type, channel, size);
+    // print_named_data("hci_packet", packet, size);
 
     if (packet_type != HCI_EVENT_PACKET) return;
 
     uint8_t event_type = hci_event_packet_get_type(packet);
-    LOG_DEBUG("event_type: 0x%02x", event_type);
+    // LOG_DEBUG("event_type: 0x%02x", event_type);
     switch (event_type) {
         case BTSTACK_EVENT_STATE: //0x60
             if (btstack_event_state_get_state(packet) != HCI_STATE_WORKING) return;
@@ -344,7 +342,7 @@ void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, 
             break;
 
         case HCI_EVENT_DISCONNECTION_COMPLETE: //0x05
-            LOG_DEBUG("tidying connection: 0x%02x, 0x%02x, enabled: %d", le_connection->connection_handle, le_connection->value_handle, le_connection->notification_enabled);
+            // LOG_DEBUG("tidying connection: 0x%02x, 0x%02x, enabled: %d", le_connection->connection_handle, le_connection->value_handle, le_connection->notification_enabled);
             //le_connection.notification_enabled = 0;
             LOG_DEBUG("LE Connection 0x%04x : disconnect, reason 0x%02x", le_connection->connection_handle, hci_event_disconnection_complete_get_reason(packet));
             break;
@@ -371,17 +369,17 @@ void att_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, 
     UNUSED(size);
     UNUSED(channel);
     bd_addr_t local_addr;
-    LOG_DEBUG("att_packet_handler(0x%02x,%d,data,%d)", packet_type, channel, size);
+    // LOG_DEBUG("att_packet_handler(0x%02x,%d,data,%d)", packet_type, channel, size);
     if (packet_type != HCI_EVENT_PACKET) return;
 
-    print_named_data("att_packet", packet, size);
+    // print_named_data("att_packet", packet, size);
 
     uint8_t event_type = hci_event_packet_get_type(packet);
-    LOG_DEBUG("event_type: 0x%02x", event_type);
+    // LOG_DEBUG("event_type: 0x%02x", event_type);
     switch (event_type) {
         case ATT_EVENT_CAN_SEND_NOW: //0xb7
             if (le_connection->notification_enabled) {
-                LOG_DEBUG("att_server_notify(0x%02x,0x%02x,%d,%d)", le_connection->connection_handle, le_connection->value_handle, le_connection->data, le_connection->data_size);
+                // LOG_DEBUG("att_server_notify(0x%02x,0x%02x,%d,%d)", le_connection->connection_handle, le_connection->value_handle, le_connection->data, le_connection->data_size);
                 att_server_notify(le_connection->connection_handle, le_connection->value_handle,
                                   (uint8_t *) &le_connection->data, le_connection->data_size);
             }
@@ -404,13 +402,13 @@ void att_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, 
 static void sm_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size) {
     UNUSED(channel);
     UNUSED(size);
-    LOG_DEBUG("sm_packet_handler(0x%02x,%d,data,%d)", packet_type, channel, size);
+    // LOG_DEBUG("sm_packet_handler(0x%02x,%d,data,%d)", packet_type, channel, size);
     if (packet_type != HCI_EVENT_PACKET) return;
 
-    print_named_data("sm_packet", packet, size);
+    // print_named_data("sm_packet", packet, size);
 
     uint8_t event_packet_type = hci_event_packet_get_type(packet);
-    LOG_DEBUG("event_packet_type: 0x%02x", event_packet_type);
+    // LOG_DEBUG("event_packet_type: 0x%02x", event_packet_type);
     switch (event_packet_type) {
         case SM_EVENT_JUST_WORKS_REQUEST:
             LOG_DEBUG("Just works requested");
@@ -503,18 +501,18 @@ void PicoWBluetooth::setup() {
         sm_set_io_capabilities(IO_CAPABILITY_DISPLAY_ONLY);
     }
 
-    LOG_DEBUG("att_server_init()");
+    // LOG_DEBUG("att_server_init()");
     att_server_init(profile_data, att_read_callback, att_write_callback);
 
-    LOG_DEBUG("inform about BTstack state");
+    // LOG_DEBUG("inform about BTstack state");
     hci_event_callback_registration.callback = &hci_packet_handler;
     hci_add_event_handler(&hci_event_callback_registration);
 
-    LOG_DEBUG("inform about security manager state");
+    // LOG_DEBUG("inform about security manager state");
     sm_event_callback_registration.callback = &sm_packet_handler;
     sm_add_event_handler(&sm_event_callback_registration);
 
-    LOG_DEBUG("register for ATT event");
+    // LOG_DEBUG("register for ATT event");
     att_server_register_packet_handler(att_packet_handler);
     hci_power_control(HCI_POWER_ON);
 
