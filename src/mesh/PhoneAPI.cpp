@@ -50,7 +50,7 @@ void PhoneAPI::handleStartConfig()
     // Must be before setting state (because state is how we know !connected)
     if (!isConnected()) {
         onConnectionChanged(true);
-        LOG_INFO("PhoneAPI::handleStartConfig - observe - fromNumChanged");
+        //LOG_INFO("PhoneAPI::handleStartConfig - observe - fromNumChanged");
         observe(&service->fromNumChanged);
 #ifdef FSCom
         observe(&xModem.packetReady);
@@ -83,7 +83,7 @@ void PhoneAPI::close()
     if (state != STATE_SEND_NOTHING) {
         state = STATE_SEND_NOTHING;
         resetReadIndex();
-        LOG_DEBUG("PhoneAPI::handleStartConfig - unobserve - fromNumChanged");
+        //LOG_DEBUG("PhoneAPI::handleStartConfig - unobserve - fromNumChanged");
         unobserve(&service->fromNumChanged);
 #ifdef FSCom
         unobserve(&xModem.packetReady);
@@ -568,7 +568,7 @@ void PhoneAPI::releaseClientNotification()
  */
 bool PhoneAPI::available()
 {
-    LOG_DEBUG("PhoneAPI::available - state: %d\n", state);
+    //LOG_DEBUG("PhoneAPI::available - state: %d\n", state);
     switch (state) {
     case STATE_SEND_NOTHING:
         return false;
