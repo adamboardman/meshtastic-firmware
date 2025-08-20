@@ -26,7 +26,7 @@ template<class T>
 class CircularBuffer {
 public:
     //We allocate room for the specified size plus the end item to allow use for null terminated strings
-    explicit CircularBuffer(uint16_t size): buffer(std::unique_ptr<T[]>(new T[size + 1])),
+    explicit CircularBuffer(const uint16_t size): buffer(std::unique_ptr<T[]>(new T[size + 1])),
                                             fixed_size(size) {
     }
 
@@ -182,7 +182,7 @@ inline uint16_t CircularBuffer<char>::consume_line(char *line, const uint16_t li
 
     uint16_t consumable = (head_copy <= tail_copy && !empty() ? fixed_size : head_copy) - tail_copy;
     uint16_t will_consume = std::min(line_size, consumable);
-    auto to_consume = reinterpret_cast<char *>(&buffer[tail_copy]);
+    auto to_consume = &buffer[tail_copy];
     auto line_end = std::strchr(to_consume, '\n');
     uint16_t written_out = 0;
     if (line_end == nullptr) {
@@ -192,7 +192,7 @@ inline uint16_t CircularBuffer<char>::consume_line(char *line, const uint16_t li
             uint16_t extra = 0;
             if (head_copy <= tail_copy && !empty()) {
                 tail_copy = 0;
-                to_consume = reinterpret_cast<char *>(&buffer[0]);
+                to_consume = &buffer[0];
                 line_end = std::strchr(to_consume, '\n');
                 if (line_end != nullptr) {
                     extra = line_end - to_consume + 1;
@@ -207,13 +207,12 @@ inline uint16_t CircularBuffer<char>::consume_line(char *line, const uint16_t li
             maxed = false;
             tail = tail_copy;
             return written_out + extra;
-        } else {
-            tail_copy += written_out;
-            consumable = head_copy;
-            will_consume = std::min(static_cast<uint16_t>(line_size - written_out), consumable);
-            to_consume = reinterpret_cast<char *>(&buffer[tail_copy]);
-            line_end = strchr(to_consume, '\n');
         }
+        tail_copy += written_out;
+        consumable = head_copy;
+        will_consume = std::min(static_cast<uint16_t>(line_size - written_out), consumable);
+        to_consume = &buffer[tail_copy];
+        line_end = strchr(to_consume, '\n');
     }
     uint16_t line_extra = will_consume;
     if (line_end != nullptr) {
@@ -221,7 +220,7 @@ inline uint16_t CircularBuffer<char>::consume_line(char *line, const uint16_t li
     }
     std::memcpy(&line[written_out], to_consume, line_extra);
     maxed = false;
-    if ((written_out + line_extra) < consumable) {
+    if ((written_out + line_extra) <= consumable) {
         tail_copy = (tail_copy + line_extra) % fixed_size;
     } else if (head_copy <= tail_copy && !empty()) {
         if (line_end == nullptr) {

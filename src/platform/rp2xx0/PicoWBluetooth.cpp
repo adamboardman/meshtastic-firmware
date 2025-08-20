@@ -175,7 +175,7 @@ uint16_t att_read_callback(hci_con_handle_t connection_handle, uint16_t att_hand
         case ATT_CHARACTERISTIC_ed9da18c_a800_4f66_a670_aa7547e34453_01_CLIENT_CONFIGURATION_HANDLE:
         case ATT_CHARACTERISTIC_5a3d6e49_06e6_4423_9944_e9de8cdf9547_01_CLIENT_CONFIGURATION_HANDLE:
             size_used_or_needed = 2;
-            memset(buffer, offset, buffer_size - offset);
+            memset(&buffer[offset], 0, buffer_size - offset);
             break;
         case ATT_CHARACTERISTIC_ed9da18c_a800_4f66_a670_aa7547e34453_01_VALUE_HANDLE:
             LOG_DEBUG("read fromnum - report most recently give number");
@@ -199,11 +199,11 @@ uint16_t att_read_callback(hci_con_handle_t connection_handle, uint16_t att_hand
             break;
         case ATT_CHARACTERISTIC_f75c76d2_129e_4dad_a1dd_7866124401e7_01_VALUE_HANDLE:
             // LOG_DEBUG("read toradio - this should never happen");
-            memset(buffer, offset, buffer_size - offset);
+            memset(&buffer[offset], 0, buffer_size - offset);
             break;
         case ATT_CHARACTERISTIC_5a3d6e49_06e6_4423_9944_e9de8cdf9547_01_VALUE_HANDLE:
             // LOG_DEBUG("read - A log message as LogRecord protobuf");
-            memset(buffer, offset, buffer_size - offset);
+            memset(&buffer[offset], 0, buffer_size - offset);
             break;
         default:
             LOG_DEBUG("attempt to read undefined att_handle: %02x", att_handle);
@@ -314,8 +314,7 @@ void setup_advertisements() {
     uint16_t adv_int_min = 1000000 / 625; // 1 second
     uint16_t adv_int_max = 2000000 / 625; // 2 seconds
     uint8_t adv_type = 0;
-    bd_addr_t null_addr;
-    memset(null_addr, 0, 6);
+    bd_addr_t null_addr = {};
     gap_advertisements_set_params(adv_int_min, adv_int_max, adv_type, 0, null_addr, 0x07, 0x00);
     gap_advertisements_set_data(adv_data_len, adv_data);
     gap_scan_response_set_data(scan_response_meshtastic_data_length, scan_response_meshtastic_data);
